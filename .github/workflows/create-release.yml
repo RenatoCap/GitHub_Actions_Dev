@@ -1,0 +1,54 @@
+name: Create Release Branch + Tag + GitHub Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'master' &&
+      github.event.pull_request.head.ref == 'develop'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Leer versión
+        id: version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Crear rama release
+        run: |
+          RELEASE_BRANCH="release/v${{ steps.version.outputs.version }}"
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+
+          git checkout -b $RELEASE_BRANCH
+          git push origin $RELEASE_BRANCH
+
+      - name: Crear tag
+        run: |
+          TAG="v${{ steps.version.outputs.version }}"
+          git tag $TAG
+          git push origin $TAG
+
+      - name: Crear GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body: |
+            🚀 Release automático generado desde develop → master
+            Versión: v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
