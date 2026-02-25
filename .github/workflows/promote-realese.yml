@@ -1,8 +1,7 @@
 name: Promote Release to Latest
 
 on:
-  pull_request:
-    types: [closed]
+  push:
     branches:
       - master
 
@@ -11,9 +10,6 @@ permissions:
 
 jobs:
   promote:
-    if: >
-      github.event.pull_request.merged == true &&
-      github.event.pull_request.head.ref == 'develop'
     runs-on: ubuntu-latest
 
     steps:
@@ -26,7 +22,7 @@ jobs:
           VERSION=$(cat VERSION)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Convertir release a Latest
+      - name: Promover release
         uses: actions/github-script@v7
         with:
           script: |
@@ -35,22 +31,24 @@ jobs:
             const repo = context.repo.repo
             const tag = `v${version}`
 
-            // Obtener release por tag
-            const { data: release } =
-              await github.rest.repos.getReleaseByTag({
+            try {
+              const { data: release } =
+                await github.rest.repos.getReleaseByTag({
+                  owner,
+                  repo,
+                  tag
+                })
+
+              await github.rest.repos.updateRelease({
                 owner,
                 repo,
-                tag
+                release_id: release.id,
+                prerelease: false,
+                draft: false,
+                make_latest: "true"
               })
 
-            // Actualizar release
-            await github.rest.repos.updateRelease({
-              owner,
-              repo,
-              release_id: release.id,
-              prerelease: false,
-              draft: false,
-              name: `Release ${tag}`
-            })
-
-            core.info(`✅ Release ${tag} promovido a Latest`)
+              core.info(`✅ Release ${tag} promovido a Latest`)
+            } catch (error) {
+              core.setFailed(`❌ No se encontró release para ${tag}`)
+            }
