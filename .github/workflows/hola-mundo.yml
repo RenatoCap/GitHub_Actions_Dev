@@ -1,0 +1,19 @@
+name: Hola Mundo Action
+
+on:
+  push:
+    branches: [ "feat/feature_a" ]
+
+jobs:
+  saludar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Mostrar mensaje Hola Mundo
+        run: echo "👋 Hola Mundo desde GitHub Actions"
+
+      - name: Mostrar información del runner
+        run: |
+          echo "Usuario: $USER"
+          echo "Directorio actual: $(pwd)"
+          echo "Fecha: $(date)"
