@@ -1,0 +1,136 @@
+name: Release from Milestone
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - master
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+jobs:
+  release:
+    if: github.event.pull_request.head.ref == 'develop'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Leer versión
+        id: version
+        run: |
+          VERSION=$(cat VERSION)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Analizar milestone
+        id: milestone
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = "${{ steps.version.outputs.version }}"
+            const owner = context.repo.owner
+            const repo = context.repo.repo
+
+            const { data: milestones } =
+              await github.rest.issues.listMilestones({
+                owner, repo, state: "open"
+              })
+
+            const milestone = milestones.find(m =>
+              m.title.startsWith(`v${version.slice(0,3)}`)
+            )
+
+            if (!milestone) {
+              core.setFailed("❌ No se encontró milestone para esta versión")
+              return
+            }
+
+            const { data: issues } =
+              await github.rest.issues.listForRepo({
+                owner,
+                repo,
+                milestone: milestone.number,
+                state: "all",
+                per_page: 100
+              })
+
+            const total = issues.length
+            const closed = issues.filter(i => i.state === "closed").length
+            const open = total - closed
+            const percent = Math.round((closed / total) * 100)
+
+            const barCount = Math.round(percent / 10)
+            const bar =
+              "🟩".repeat(barCount) + "⬜".repeat(10 - barCount)
+
+            const openList = issues
+              .filter(i => i.state === "open")
+              .map(i => `- #${i.number} ${i.title}`)
+              .join("\n") || "Ninguna 🎉"
+
+            core.setOutput("title", milestone.title)
+            core.setOutput("description", milestone.description || "")
+            core.setOutput("percent", percent)
+            core.setOutput("bar", bar)
+            core.setOutput("openList", openList)
+            core.setOutput("complete", percent === 100)
+
+      - name: Comentar en PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `
+            ## 🚀 Release ${process.env.TITLE}
+
+            **Progreso:** ${process.env.PERCENT}%
+
+            ${process.env.BAR}
+
+            ### 📋 Issues abiertas
+            ${process.env.OPENLIST}
+
+            ---
+
+            ### 📝 Descripción del milestone
+            ${process.env.DESCRIPTION}
+            `
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            })
+        env:
+          TITLE: ${{ steps.milestone.outputs.title }}
+          DESCRIPTION: ${{ steps.milestone.outputs.description }}
+          PERCENT: ${{ steps.milestone.outputs.percent }}
+          BAR: ${{ steps.milestone.outputs.bar }}
+          OPENLIST: ${{ steps.milestone.outputs.openList }}
+
+      - name: Crear release (solo si completo)
+        if: steps.milestone.outputs.complete == 'true'
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          BRANCH="release/v$VERSION"
+
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+
+          git checkout -b $BRANCH
+          git push origin $BRANCH
+
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Crear GitHub Release
+        if: steps.milestone.outputs.complete == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Release v${{ steps.version.outputs.version }}
+          body: ${{ steps.milestone.outputs.description }}
