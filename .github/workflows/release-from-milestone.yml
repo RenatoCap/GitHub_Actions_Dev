@@ -1,4 +1,4 @@
-name: Release from Milestone
+name: Release from Milestone (PRO)
 
 on:
   pull_request:
@@ -20,12 +20,49 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # =============================
+      # 1️⃣ Leer versión
+      # =============================
       - name: Leer versión
         id: version
         run: |
           VERSION=$(cat VERSION)
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
+      # =============================
+      # 2️⃣ Validar SemVer
+      # =============================
+      - name: Validar SemVer
+        run: |
+          if [[ ! "${{ steps.version.outputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ VERSION no cumple SemVer (X.Y.Z)"
+            exit 1
+          fi
+
+      # =============================
+      # 3️⃣ Verificar que no exista versión
+      # =============================
+      - name: Verificar versión única
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v$VERSION"
+          BRANCH="release/v$VERSION"
+
+          git fetch --all --tags
+
+          if git tag -l | grep -q "^$TAG$"; then
+            echo "❌ Ya existe el tag $TAG"
+            exit 1
+          fi
+
+          if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+            echo "❌ Ya existe la rama $BRANCH"
+            exit 1
+          fi
+
+      # =============================
+      # 4️⃣ Analizar milestone
+      # =============================
       - name: Analizar milestone
         id: milestone
         uses: actions/github-script@v7
@@ -77,9 +114,18 @@ jobs:
             core.setOutput("percent", percent)
             core.setOutput("bar", bar)
             core.setOutput("openList", openList)
-            core.setOutput("complete", percent === 100)
 
+            if (percent !== 100) {
+              core.setFailed(`❌ Milestone incompleto (${percent}%)`)
+            } else {
+              core.setOutput("complete", true)
+            }
+
+      # =============================
+      # 5️⃣ Comentar en PR
+      # =============================
       - name: Comentar en PR
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
@@ -112,7 +158,10 @@ jobs:
           BAR: ${{ steps.milestone.outputs.bar }}
           OPENLIST: ${{ steps.milestone.outputs.openList }}
 
-      - name: Crear release (solo si completo)
+      # =============================
+      # 6️⃣ Crear release (solo si todo OK)
+      # =============================
+      - name: Crear rama y tag
         if: steps.milestone.outputs.complete == 'true'
         run: |
           VERSION="${{ steps.version.outputs.version }}"
@@ -134,3 +183,4 @@ jobs:
           tag_name: v${{ steps.version.outputs.version }}
           name: Release v${{ steps.version.outputs.version }}
           body: ${{ steps.milestone.outputs.description }}
+          prerelease: true
