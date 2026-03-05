@@ -27,11 +27,12 @@ jobs:
 
           echo "Calling Supabase RPC update_all_users_investment_values..."
 
-          curl --fail --show-error --silent \
+          curl --fail --silent --show-error \
             -X POST "${SUPABASE_URL}/rest/v1/rpc/update_all_users_investment_values" \
             -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}" \
             -H "Content-Type: application/json" \
-            -d '{}'
+            -d '{}' \
+            > /dev/null
 
           echo "RPC call finished"
